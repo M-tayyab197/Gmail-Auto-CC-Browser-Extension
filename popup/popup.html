@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gmail Auto CC</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="container">
+
+    <!-- ── HEADER ── -->
+    <header class="header">
+      <div class="logo">
+        <div class="logo-icon">
+          <!-- Envelope SVG icon — no image file needed -->
+          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22"
+               viewBox="0 0 24 24" fill="none"
+               stroke="white" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="4" width="20" height="16" rx="2"/>
+            <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+          </svg>
+        </div>
+        <div class="logo-text">
+          <h1 class="logo-title">CC Auto-Fill</h1>
+          <p class="logo-subtitle">Gmail CC Manager</p>
+        </div>
+      </div>
+    </header>
+
+    <hr class="divider" />
+
+    <!-- ── ADD EMAIL SECTION ── -->
+    <section class="add-section">
+      <label class="section-label" for="emailInput">Add email</label>
+      <div class="input-row">
+        <div class="input-wrapper">
+          <!-- Small envelope icon inside the input field -->
+          <svg class="input-icon" xmlns="http://www.w3.org/2000/svg"
+               width="15" height="15" viewBox="0 0 24 24" fill="none"
+               stroke="#9CA3AF" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="4" width="20" height="16" rx="2"/>
+            <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+          </svg>
+          <input
+            type="email"
+            id="emailInput"
+            class="email-input"
+            placeholder="name@example.com"
+            autocomplete="off"
+          />
+        </div>
+        <button id="addBtn" class="add-btn">Add</button>
+      </div>
+      <!-- Error message — hidden until needed by JS -->
+      <p id="errorMsg" class="error-msg hidden"></p>
+    </section>
+
+    <!-- ── SAVED EMAILS SECTION ── -->
+    <section class="saved-section">
+      <div class="saved-header">
+        <span class="section-label">Saved emails</span>
+        <button id="clearAllBtn" class="clear-all-btn">Clear all</button>
+      </div>
+
+      <!-- JS will inject <li> items here -->
+      <ul id="emailList" class="email-list"></ul>
+
+      <!-- Shown by JS when the list is empty -->
+      <p id="emptyState" class="empty-state">No saved emails yet.</p>
+    </section>
+
+    <hr class="divider" />
+
+    <!-- ── STATUS FOOTER ── -->
+    <footer class="footer">
+      <span class="status-dot"></span>
+      <span class="status-text">Emails auto-added to CC on compose</span>
+    </footer>
+
+  </div>
+
+  <!-- JS loaded at the end so the DOM is ready when it runs -->
+  <script src="popup.js"></script>
+</body>
+</html>

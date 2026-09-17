@@ -1,0 +1,269 @@
+/* ── RESET ── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ── BASE ── */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #ffffff;
+  color: #1e293b;
+  width: 400px;   /* controls the popup width */
+}
+
+.container {
+  padding: 22px 24px;
+}
+
+/* ── HEADER ── */
+.header {
+  margin-bottom: 18px;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.logo-icon {
+  width: 46px;
+  height: 46px;
+  background: #2563EB;        /* your blue */
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.logo-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.2;
+}
+
+.logo-subtitle {
+  font-size: 12.5px;
+  color: #9CA3AF;
+  margin-top: 2px;
+  font-weight: bold;
+}
+
+/* ── DIVIDER ── */
+.divider {
+  border: none;
+  border-top: 1px solid #F1F5F9;
+  margin: 16px 0;
+}
+
+/* ── SHARED LABEL ── */
+.section-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #374151;
+  display: block;
+  margin-bottom: 8px;
+}
+
+/* ── ADD EMAIL ── */
+.add-section {
+  margin-bottom: 22px;
+}
+
+.input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.input-wrapper {
+  position: relative;
+  flex: 1;
+}
+
+/* The small envelope icon sitting inside the input */
+.input-icon {
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none; /* clicks pass through to the input */
+}
+
+.email-input {
+  width: 100%;
+  padding: 10px 12px 10px 36px; /* left padding makes room for the icon */
+  border: 1.5px solid #E5E7EB;
+  border-radius: 10px;
+  font-size: 13.5px;
+  color: #111827;
+  background: #F9FAFB;
+  outline: none;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.email-input::placeholder {
+  color: #9CA3AF;
+}
+
+.email-input:focus {
+  border-color: #2563EB;
+  background: #ffffff;
+}
+
+.add-btn {
+  padding: 10px 22px;
+  background: #2563EB;
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+
+.add-btn:hover  { background: #1d4ed8; }
+.add-btn:active { background: #1e40af; }
+
+/* ── ERROR MESSAGE ── */
+.error-msg {
+  font-size: 12px;
+  color: #ef4444;
+  margin-top: 6px;
+}
+
+/* ── SAVED EMAILS ── */
+.saved-section {
+  margin-bottom: 6px;
+}
+
+.saved-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.clear-all-btn {
+  background: none;
+  border: none;
+  font-size: 12.5px;
+  color: #9CA3AF;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.2s;
+}
+
+.clear-all-btn:hover { color: #ef4444; }
+
+/* ── EMAIL LIST ── */
+.email-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Each saved email row */
+.email-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  background: #F8FAFC;
+  border-radius: 10px;
+  transition: background 0.15s;
+}
+
+.email-item:hover {
+  background: #EFF6FF; /* light blue tint on hover */
+}
+
+/* Show the delete button when hovering the row */
+.email-item:hover .delete-btn {
+  opacity: 1;
+}
+
+/* ── AVATAR CIRCLE ── */
+/* Displays the first letter of the email address */
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #DBEAFE;   /* very light blue */
+  color: #2563EB;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+
+.email-text {
+  flex: 1;
+  font-size: 13.5px;
+  color: #1e293b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── DELETE BUTTON ── */
+/* Hidden until the row is hovered */
+.delete-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #CBD5E1;
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  opacity: 0;
+  transition: color 0.2s, opacity 0.2s;
+  flex-shrink: 0;
+}
+
+.delete-btn:hover { color: #ef4444; }
+
+/* ── EMPTY STATE ── */
+.empty-state {
+  font-size: 13px;
+  color: #9CA3AF;
+  text-align: center;
+  padding: 18px 0 10px;
+}
+
+/* ── FOOTER ── */
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #2563EB;
+  flex-shrink: 0;
+}
+
+.status-text {
+  font-size: 12px;
+  color: #6B7280;
+}
+
+/* ── UTILITY ── */
+.hidden {
+  display: none !important;
+}

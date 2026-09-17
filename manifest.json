@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "Gmail Auto CC",
+  "version": "1.0.0",
+  "description": "Automatically adds saved email addresses to the CC field of new Gmail emails.",
+
+  "permissions": [
+    "storage"
+  ],
+
+  "host_permissions": [
+    "https://mail.google.com/*"
+  ],
+
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Gmail Auto CC"
+  },
+
+  "content_scripts": [
+    {
+      "matches": [
+        "https://mail.google.com/*"
+      ],
+      "js": [
+        "content/gmail.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
