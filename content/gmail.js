@@ -1,33 +1,37 @@
 // ============================================================
-// gmail.js — Milestone 10
+// gmail.js — Milestone 7 (Final): Reliability + No Trailing Comma
 //
-// Adds to M9:
-//   1. Trusted input events via document.execCommand. Chrome MV3
-//      content scripts live in an isolated world — synthetic
-//      KeyboardEvent/InputEvent objects carry isTrusted:false,
-//      which Gmail's handlers silently ignore. execCommand goes
-//      through the browser editing pipeline and produces events
-//      with isTrusted:true that Gmail processes normally.
-//   2. Comma as chip delimiter. Gmail treats comma (, and
-//      Enter/Tab/semicolon) as a chip delimiter. Using execCommand
-//      for the comma keeps all events trusted — no synthetic
-//      KeyboardEvent needed, which was the root cause of the
-//      "Chip may not have formed" warning in M9.
+// ROOT CAUSE FIXED:
+//   insertSingleEmail always appended a comma after every email
+//   (including the last one) to trigger Gmail's chip creation.
+//   For intermediate emails Gmail consumed the comma as a chip
+//   delimiter and cleared the input. For the last email the
+//   comma remained as visible trailing text in the CC field.
+//
+// FIX:
+//   1. insertSingleEmail receives an `isLast` flag.
+//   2. For the last email only: after the comma creates the chip,
+//      execCommand('delete') removes the trailing comma.
+//   3. insertEmailsIntoCC pre-filters the emails to insert so it
+//      knows which one is truly last BEFORE the loop starts.
+//   4. The unreliable post-loop cleanup section is removed.
+//
+// Comma count rule enforced:
+//   1 email  → 0 commas
+//   2 emails → 1 comma  (between them, not after)
+//   N emails → N-1 commas
 // ============================================================
 
 
 console.log('✅ [Gmail Auto CC] Content script running.');
 
-const PROCESSED_ATTR = 'data-cc-processed';
-const STORAGE_KEY    = 'ccEmails';
+const PROCESSED_ATTR  = 'data-cc-processed';
+const STORAGE_KEY     = 'ccEmails';
 const RELOAD_ONCE_KEY = 'gmail-cc-auto-reloaded';
 
-// If the extension was reloaded at chrome://extensions while Gmail
-// was already open, this already-injected script's chrome.* bridge
-// is dead (chrome.storage becomes undefined). Reload Gmail once so
-// a fresh content script injects with working storage access.
-// tryRecoverInvalidatedContext() / isExtensionContextValid() are
-// hoisted from SECTION 6.
+// isExtensionContextValid / tryRecoverInvalidatedContext are
+// function declarations (Section 6) and are hoisted, so this
+// top-level call is safe even though they appear later.
 if (!isExtensionContextValid()) {
   tryRecoverInvalidatedContext();
 }
@@ -39,13 +43,10 @@ if (!isExtensionContextValid()) {
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Returns true only for elements actually visible on screen.
-// Gmail keeps collapsed Cc/Bcc rows in the DOM (hidden), so a
-// querySelector match is not enough — we must confirm visibility.
 function isElementVisible(el) {
   if (!el) return false;
   try {
-    if (el.offsetParent === null) return false;            // in a display:none chain
+    if (el.offsetParent === null) return false;
     const style = getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden') return false;
     const rect = el.getBoundingClientRect();
@@ -57,14 +58,12 @@ function isElementVisible(el) {
 
 // Polls every `interval` ms until a selector matches inside
 // `root`, or `timeout` ms have passed. Returns { el, selector }
-// or null. Far more reliable than fixed setTimeout delays.
-// When `requireVisible` is true, only visible elements match.
+// or null. When requireVisible is true, hidden elements are skipped.
 function waitForElement(root, selectors, timeout = 4000, interval = 100, requireVisible = false) {
   return new Promise((resolve) => {
     const start = Date.now();
 
     function attempt() {
-      // If the compose window was closed, stop polling immediately
       if (!document.contains(root)) { resolve(null); return; }
 
       for (const selector of selectors) {
@@ -74,7 +73,7 @@ function waitForElement(root, selectors, timeout = 4000, interval = 100, require
             resolve({ el, selector });
             return;
           }
-        } catch (e) { /* invalid selector string — skip */ }
+        } catch (e) { /* invalid selector — skip */ }
       }
 
       if (Date.now() - start >= timeout) { resolve(null); return; }
@@ -85,7 +84,6 @@ function waitForElement(root, selectors, timeout = 4000, interval = 100, require
   });
 }
 
-// One-shot: returns the first match across a list of selectors.
 function trySelectors(root, selectorList) {
   for (const selector of selectorList) {
     try {
@@ -101,8 +99,6 @@ function trySelectors(root, selectorList) {
 // SECTION 2 — VALIDATION
 // ══════════════════════════════════════════════════════════════
 
-// Re-validate before inserting — defence in depth against
-// anything corrupt that might have ended up in storage.
 function isValidEmail(email) {
   if (typeof email !== 'string') return false;
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
@@ -113,8 +109,6 @@ function isValidEmail(email) {
 // SECTION 3 — COMPOSE SAFETY
 // ══════════════════════════════════════════════════════════════
 
-// Returns false the moment Gmail removes the compose node
-// from the DOM (user clicked X to close it mid-insertion).
 function isComposeStillOpen(composeNode) {
   return document.body.contains(composeNode);
 }
@@ -129,8 +123,6 @@ function findCCInput(composeNode) {
     'input[name="cc"]',
     'textarea[name="cc"]',
     '[name="cc"]',
-    // Gmail's current DOM: <input class="agP aFw" aria-label="CC recipients">
-    // "i" flag = case-insensitive, catches both "Cc" and "CC" variants.
     'input[aria-label="cc recipients" i]',
     'textarea[aria-label="cc recipients" i]',
     '[aria-label="cc recipients" i]',
@@ -139,7 +131,7 @@ function findCCInput(composeNode) {
     '[data-name="cc"]',
   ];
 
-  // Prefer a VISIBLE input. Gmail keeps collapsed Cc rows in the
+  // Prefer a VISIBLE input — Gmail keeps collapsed Cc rows in the
   // DOM (hidden); matching one would make us skip the Cc toggle.
   let fallback = null;
   for (const selector of SELECTORS) {
@@ -148,7 +140,7 @@ function findCCInput(composeNode) {
       if (!el) continue;
       if (!fallback) fallback = el;
       if (isElementVisible(el)) return el;
-    } catch (e) { /* invalid selector string — skip */ }
+    } catch (e) { /* skip */ }
   }
   return fallback;
 }
@@ -165,7 +157,6 @@ function findCCToggle(composeNode) {
   ]);
   if (result) return result.el;
 
-  // Text-content fallback — any leaf element reading exactly "Cc"
   const candidates = composeNode.querySelectorAll('span, div, td, a');
   for (const el of candidates) {
     if (el.children.length === 0 && el.textContent.trim() === 'Cc') return el;
@@ -180,8 +171,6 @@ async function openCCField(composeNode) {
     return existingInput;
   }
 
-  // The input may exist in the DOM but be hidden (collapsed Cc row
-  // or a leftover). The toggle must be clicked to reveal it.
   const toggle = findCCToggle(composeNode);
   if (!toggle) {
     console.warn('⚠️  [Gmail Auto CC] CC toggle not found.');
@@ -191,7 +180,6 @@ async function openCCField(composeNode) {
   console.log('🖱️  [Gmail Auto CC] Clicking CC toggle...');
   toggle.click();
 
-  // Wait up to 3s for a VISIBLE input to appear
   const result = await waitForElement(composeNode, [
     'input[name="cc"]',
     'textarea[name="cc"]',
@@ -201,7 +189,7 @@ async function openCCField(composeNode) {
     '[aria-label="cc recipients" i]',
     '[data-name="cc"] input',
     '[data-name="cc"] [contenteditable="true"]',
-  ], 3000, 100, true); // requireVisible
+  ], 3000, 100, true); // requireVisible: true
 
   if (result) {
     console.log(`✅ [Gmail Auto CC] CC input appeared via "${result.selector}"`);
@@ -212,8 +200,6 @@ async function openCCField(composeNode) {
   return null;
 }
 
-// Reads email addresses already present in the CC field
-// (both raw typed text and confirmed chips) to prevent duplicates.
 function getExistingCCEmails(composeNode) {
   const existing = new Set();
 
@@ -251,7 +237,7 @@ function getExistingCCEmails(composeNode) {
     }
   }
 
-  return existing; // Set<string> — all lowercase
+  return existing;
 }
 
 
@@ -259,13 +245,25 @@ function getExistingCCEmails(composeNode) {
 // SECTION 5 — EMAIL INSERTION
 // ══════════════════════════════════════════════════════════════
 
-async function insertSingleEmail(ccInput, email) {
+// ── insertSingleEmail ─────────────────────────────────────────
+// isLast flag controls trailing-comma behaviour:
+//
+//   isLast = false (intermediate email):
+//     type email → type comma → Gmail creates chip, clears input
+//     comma is consumed as delimiter — no cleanup needed
+//
+//   isLast = true (final email):
+//     type email → type comma → Gmail creates chip
+//     comma MAY remain in input as trailing text
+//     execCommand('delete') removes it (trusted event, not synthetic)
+//
+// This enforces: N emails → exactly N-1 commas (none trailing).
 
-  // ── Step 1: Activate CC field in Gmail's internal router ──
-  // click() triggers Gmail's own click handler, telling its
-  // internal field router "CC is now the active field". Without
-  // this, Gmail's router still points to "To" regardless of
-  // where the browser focus sits.
+async function insertSingleEmail(ccInput, email, isLast = false) {
+
+  // ── Step 1: Activate CC in Gmail's internal field router ──
+  // click() triggers Gmail's own handler, telling its internal
+  // router "CC is now active". Without this, events route to "To".
   ccInput.click();
   await wait(200);
 
@@ -277,28 +275,58 @@ async function insertSingleEmail(ccInput, email) {
   ccInput.dispatchEvent(new Event('input', { bubbles: true }));
   await wait(50);
 
-  // ── Step 3: Type the email via execCommand ───────────────
-  // Chrome's MV3 isolated world means synthetic KeyboardEvent
-  // and InputEvent objects have isTrusted:false — Gmail's
-  // handlers silently ignore them.  document.execCommand goes
-  // through the browser's editing pipeline and produces events
-  // with isTrusted:true, which Gmail processes normally.
+  // ── Step 3: Type the email address (trusted) ─────────────
+  // execCommand goes through the browser editing pipeline and
+  // produces isTrusted:true events — Gmail's handlers require
+  // this; synthetic InputEvent/KeyboardEvent have isTrusted:false
+  // and are silently ignored by Gmail.
   document.execCommand('insertText', false, email);
   await wait(400);
 
-  // ── Step 4: Confirm chip via comma ───────────────────────
-  // Gmail treats comma (and Enter/Tab/semicolon) as chip
-  // delimiters.  Using execCommand for the comma keeps all
-  // events trusted — no synthetic KeyboardEvent needed.
+  // ── Step 4: Confirm chip with comma ──────────────────────
+  // Gmail treats comma as a chip delimiter. Using execCommand
+  // keeps the event trusted so Gmail processes the delimiter.
+  // For intermediate emails Gmail consumes the comma and clears
+  // the input — no trailing comma left. For the last email the
+  // comma may remain (handled in Step 5).
   document.execCommand('insertText', false, ',');
   await wait(600);
 
-  // ── Step 5: Verify chip formation ────────────────────────
+  // ── Step 5: Remove trailing comma for the last email ─────
+  // FIX: only runs when isLast = true.
+  //
+  // After the comma above, two outcomes are possible:
+  //   A) Gmail consumed the comma to create the chip → input empty
+  //   B) Gmail created the chip but left the comma → input has ","
+  //
+  // In case B the comma is visible trailing text. We check and
+  // remove it with execCommand('delete') — which acts like Backspace
+  // (removes the character before the cursor). Since we just
+  // inserted the comma, the cursor is directly after it, so
+  // delete removes exactly the comma character.
+  //
+  // execCommand('delete') is trusted; directly setting
+  // ccInput.value was NOT reliable because Gmail's internal
+  // state does not update from direct property assignment.
+  if (isLast) {
+    const remaining = (ccInput.value || '').trim();
+    if (remaining === ',' || remaining.endsWith(',')) {
+      document.execCommand('delete');
+      await wait(200);
+      console.log('🧹 [Gmail Auto CC] Removed trailing comma after last email.');
+    } else {
+      // Comma was already consumed by Gmail to create the chip
+      console.log('ℹ️  [Gmail Auto CC] Comma was consumed by Gmail — no cleanup needed.');
+    }
+  }
+
+  // ── Step 6: Verify chip formation (non-blocking) ─────────
   const remaining = (ccInput.value || '').trim();
-  if (remaining === '' || remaining !== email.trim() + ',') {
-    console.log(`   ✅ Chip created for: ${email}`);
+  if (remaining === '' || (remaining !== email.trim() && remaining !== email.trim() + ',')) {
+    console.log(`   ✅ Chip confirmed for: ${email}`);
   } else {
     console.warn(`   ⚠️  Chip may not have formed for: ${email}`);
+    console.warn(`      Input value after insertion: "${remaining}"`);
   }
 }
 
@@ -306,15 +334,6 @@ async function insertSingleEmail(ccInput, email) {
 // ══════════════════════════════════════════════════════════════
 // SECTION 6 — CONTEXT VALIDITY + CHROME STORAGE
 // ══════════════════════════════════════════════════════════════
-
-// ── Orphaned-context detection & one-time recovery ──────────
-// Reloading the extension at chrome://extensions while Gmail is
-// already open orphans the already-injected content script: its
-// chrome.* bridge dies and chrome.storage becomes undefined —
-// which surfaces as "Cannot read properties of undefined
-// (reading 'sync')" and makes the flow report "No saved emails".
-// A new content script cannot inject into an existing tab, so we
-// reload Gmail once (sessionStorage-guarded) to re-inject fresh.
 
 function isExtensionContextValid() {
   try {
@@ -342,23 +361,17 @@ function tryRecoverInvalidatedContext() {
     sessionStorage.setItem(RELOAD_ONCE_KEY, '1');
     console.warn('🔄  [Gmail Auto CC] Reloading Gmail once to reconnect the extension...');
     location.reload();
-  } catch (e) {
-    // sessionStorage unavailable — just report and move on
-  }
+  } catch (e) { /* sessionStorage unavailable — continue */ }
 
   return false;
 }
 
-// Wraps chrome.storage.sync.get in a Promise so we can await it.
 function loadEmailsFromStorage() {
   return new Promise((resolve) => {
-
-    // First line of defence against an orphaned content script
     if (!tryRecoverInvalidatedContext()) { resolve([]); return; }
 
     try {
       chrome.storage.sync.get([STORAGE_KEY], (result) => {
-
         if (chrome.runtime.lastError) {
           console.warn(
             '⚠️  [Gmail Auto CC] chrome.storage failed:',
@@ -367,7 +380,6 @@ function loadEmailsFromStorage() {
           resolve([]);
           return;
         }
-
         resolve(result[STORAGE_KEY] || []);
       });
     } catch (err) {
@@ -396,7 +408,6 @@ async function insertEmailsIntoCC(composeNode, ccInput) {
     return;
   }
 
-  // Re-validate every email before inserting (defence in depth)
   const validEmails = savedEmails.filter((email) => {
     if (isValidEmail(email)) return true;
     console.warn(`⚠️  [Gmail Auto CC] Invalid email in storage — skipping: "${email}"`);
@@ -405,36 +416,63 @@ async function insertEmailsIntoCC(composeNode, ccInput) {
 
   if (validEmails.length === 0) return;
 
-  console.log(`📋 [Gmail Auto CC] Processing ${validEmails.length} email(s)...`);
-
-  // Snapshot what is already in CC before we start
+  // Snapshot what is already in the CC field
   const existingEmails = getExistingCCEmails(composeNode);
   if (existingEmails.size > 0) {
     console.log('🔍 [Gmail Auto CC] Already in CC field:', [...existingEmails]);
   }
 
+  // ── KEY CHANGE: pre-filter BEFORE the loop ────────────────
+  // Building emailsToInsert up-front lets us know which email is
+  // truly last BEFORE insertion starts. Without this we couldn't
+  // determine isLast until after processing all previous emails —
+  // too late to avoid inserting the comma for the last one.
+  //
+  // Comma rule enforced by this approach:
+  //   emailsToInsert = [A, B, C]
+  //   A → isLast false → comma added, consumed by Gmail
+  //   B → isLast false → comma added, consumed by Gmail
+  //   C → isLast true  → comma added then immediately deleted
+  //   Result: A,B,C   (no trailing comma)
+  const emailsToInsert = validEmails.filter(
+    (email) => !existingEmails.has(email.toLowerCase().trim())
+  );
+
+  const skippedCount = validEmails.length - emailsToInsert.length;
+
+  if (skippedCount > 0) {
+    console.log(`⏭️  [Gmail Auto CC] Skipping ${skippedCount} duplicate(s) already in CC.`);
+  }
+
+  if (emailsToInsert.length === 0) {
+    console.log('ℹ️  [Gmail Auto CC] All emails already in CC — nothing to insert.');
+    console.group('✅ [Gmail Auto CC] Insertion complete');
+    console.log('Inserted :', 0);
+    console.log('Skipped  :', skippedCount);
+    console.groupEnd();
+    return;
+  }
+
+  console.log(`📋 [Gmail Auto CC] Inserting ${emailsToInsert.length} email(s)` +
+    (skippedCount > 0 ? ` (${skippedCount} skipped as duplicate)` : '') + '...');
+
   let insertedCount = 0;
-  let skippedCount  = 0;
 
-  for (const email of validEmails) {
+  // for loop with index — needed to compute isLast correctly
+  for (let i = 0; i < emailsToInsert.length; i++) {
 
-    // Stop if user closed the compose window mid-insertion
     if (!isComposeStillOpen(composeNode)) {
       console.log('ℹ️  [Gmail Auto CC] Compose was closed — stopping early.');
       break;
     }
 
-    const normalised = email.toLowerCase().trim();
+    const email  = emailsToInsert[i];
+    const isLast = i === emailsToInsert.length - 1;
 
-    if (existingEmails.has(normalised)) {
-      console.log(`⏭️  [Gmail Auto CC] Skipping duplicate: ${email}`);
-      skippedCount++;
-      continue;
-    }
+    console.log(`➕ [Gmail Auto CC] Inserting${isLast ? ' (last)' : ''}: ${email}`);
+    await insertSingleEmail(ccInput, email, isLast);
 
-    console.log(`➕ [Gmail Auto CC] Inserting: ${email}`);
-    await insertSingleEmail(ccInput, email);
-    existingEmails.add(normalised); // track locally for within-loop dedup
+    existingEmails.add(email.toLowerCase().trim());
     insertedCount++;
   }
 
@@ -447,13 +485,8 @@ async function insertEmailsIntoCC(composeNode, ccInput) {
 
 async function handleComposeDetected(composeNode) {
 
-  // Stamp immediately — prevents MutationObserver from processing
-  // the same compose node again as Gmail adds elements inside it
   composeNode.setAttribute(PROCESSED_ATTR, 'true');
 
-  // Wait for the "To" field — its presence confirms Gmail has
-  // finished injecting the full compose UI into the DOM.
-  // requireVisible: a hidden To row means the dialog is still loading.
   const toFieldResult = await waitForElement(composeNode, [
     'input[name="to"]',
     'textarea[name="to"]',
@@ -466,12 +499,7 @@ async function handleComposeDetected(composeNode) {
     return;
   }
 
-  // DOM elements appear first; Gmail attaches its JavaScript
-  // event listeners ~500–700ms later. Firing events before
-  // the listeners are attached means Gmail silently ignores them.
-  // 800ms is a safe margin that covers slow network conditions.
   await wait(800);
-
   console.log('✉️  [Gmail Auto CC] Compose window ready.');
 
   try {
@@ -483,15 +511,10 @@ async function handleComposeDetected(composeNode) {
       return;
     }
 
-    // Brief buffer after CC field is confirmed open
     await wait(300);
-
     await insertEmailsIntoCC(composeNode, ccInput);
 
   } catch (err) {
-    // Catch-all: one broken compose window must not break future ones.
-    // Without this, an async error kills the function silently and
-    // future compose windows are never processed.
     console.error('❌ [Gmail Auto CC] Unexpected error during insertion:');
     console.error('   ', err.message);
     console.error('   ', err.stack);
@@ -502,12 +525,6 @@ async function handleComposeDetected(composeNode) {
 // ══════════════════════════════════════════════════════════════
 // SECTION 7b — COMPOSE BUTTON CLICK TRIGGER
 // ══════════════════════════════════════════════════════════════
-// The MutationObserver below already catches every new compose
-// window (role="dialog"). This trigger is a backstop for the
-// exact user flow: "click the Compose button → CC flow runs".
-// The Compose button is located by CONTENT ("Compose"), not by
-// classes, because its markup changes across Gmail builds
-// (e.g. <div class="T-I T-I-KE L3" role="button">Compose</div>).
 
 function findClickedComposeButton(event) {
   let el = event.target;
@@ -522,9 +539,6 @@ function findClickedComposeButton(event) {
 }
 
 function handleComposeButtonClicked() {
-  // Gmail builds the new compose window async after the click.
-  // Defer one tick, then claim any compose window the observer
-  // has not already claimed (PROCESSED_ATTR prevents double work).
   setTimeout(() => {
     document.querySelectorAll('[role="dialog"]').forEach((dialog) => {
       if (!dialog.hasAttribute(PROCESSED_ATTR)) {
@@ -539,11 +553,11 @@ document.addEventListener('click', (event) => {
     console.log('▶️  [Gmail Auto CC] Compose button clicked — running CC flow.');
     handleComposeButtonClicked();
   }
-}, true); // capture phase: fires before Gmail's own handlers
+}, true);
 
 
 // ══════════════════════════════════════════════════════════════
-// SECTION 8 — MUTATIONOBSERVER (unchanged)
+// SECTION 8 — MUTATIONOBSERVER
 // ══════════════════════════════════════════════════════════════
 
 function isComposeWindow(node) {
