@@ -309,7 +309,8 @@ async function insertSingleEmail(ccInput, email, isLast = false) {
   // ccInput.value was NOT reliable because Gmail's internal
   // state does not update from direct property assignment.
   if (isLast) {
-    const remaining = (ccInput.value || '').trim();
+    const rawValue = ccInput.value || ccInput.textContent || ccInput.innerText || '';
+    const remaining = rawValue.trim();
     if (remaining === ',' || remaining.endsWith(',')) {
       document.execCommand('delete');
       await wait(200);
