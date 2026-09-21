@@ -1,25 +1,16 @@
 // ============================================================
-// gmail.js — Milestone 7 (Final): Reliability + No Trailing Comma
+// gmail.js — Milestone 8: Invisible Comma (No Visual Flicker)
 //
-// ROOT CAUSE FIXED:
-//   insertSingleEmail always appended a comma after every email
-//   (including the last one) to trigger Gmail's chip creation.
-//   For intermediate emails Gmail consumed the comma as a chip
-//   delimiter and cleared the input. For the last email the
-//   comma remained as visible trailing text in the CC field.
-//
-// FIX:
-//   1. insertSingleEmail receives an `isLast` flag.
-//   2. For the last email only: after the comma creates the chip,
-//      execCommand('delete') removes the trailing comma.
-//   3. insertEmailsIntoCC pre-filters the emails to insert so it
-//      knows which one is truly last BEFORE the loop starts.
-//   4. The unreliable post-loop cleanup section is removed.
+// APPROACH:
+//   For the last email, the comma is inserted and IMMEDIATELY
+//   deleted in the same synchronous block — before the browser
+//   re-renders. Gmail's handlers are synchronous, so the chip
+//   forms instantly. The comma is never visible to the user.
 //
 // Comma count rule enforced:
-//   1 email  → 0 commas
-//   2 emails → 1 comma  (between them, not after)
-//   N emails → N-1 commas
+//   1 email  → 0 visible commas
+//   2 emails → 1 visible comma  (between them, not after)
+//   N emails → N-1 visible commas (none trailing)
 // ============================================================
 
 
@@ -283,43 +274,20 @@ async function insertSingleEmail(ccInput, email, isLast = false) {
   document.execCommand('insertText', false, email);
   await wait(400);
 
-  // ── Step 4: Confirm chip with comma ──────────────────────
-  // Gmail treats comma as a chip delimiter. Using execCommand
-  // keeps the event trusted so Gmail processes the delimiter.
-  // For intermediate emails Gmail consumes the comma and clears
-  // the input — no trailing comma left. For the last email the
-  // comma may remain (handled in Step 5).
+  // ── Step 4–5: Confirm chip with comma, then remove it ────
+  // Gmail treats comma as a chip delimiter. We insert it to
+  // trigger chip creation, then IMMEDIATELY delete it (before
+  // the browser re-renders) so the user never sees it.
+  // Gmail's handler is synchronous — the chip forms in the
+  // same event loop tick as execCommand.
   document.execCommand('insertText', false, ',');
-  await wait(600);
 
-  // ── Step 5: Remove trailing comma for the last email ─────
-  // FIX: only runs when isLast = true.
-  //
-  // After the comma above, two outcomes are possible:
-  //   A) Gmail consumed the comma to create the chip → input empty
-  //   B) Gmail created the chip but left the comma → input has ","
-  //
-  // In case B the comma is visible trailing text. We check and
-  // remove it with execCommand('delete') — which acts like Backspace
-  // (removes the character before the cursor). Since we just
-  // inserted the comma, the cursor is directly after it, so
-  // delete removes exactly the comma character.
-  //
-  // execCommand('delete') is trusted; directly setting
-  // ccInput.value was NOT reliable because Gmail's internal
-  // state does not update from direct property assignment.
   if (isLast) {
-    const rawValue = ccInput.value || ccInput.textContent || ccInput.innerText || '';
-    const remaining = rawValue.trim();
-    if (remaining === ',' || remaining.endsWith(',')) {
-      document.execCommand('delete');
-      await wait(200);
-      console.log('🧹 [Gmail Auto CC] Removed trailing comma after last email.');
-    } else {
-      // Comma was already consumed by Gmail to create the chip
-      console.log('ℹ️  [Gmail Auto CC] Comma was consumed by Gmail — no cleanup needed.');
-    }
+    document.execCommand('delete');
+    console.log('🧹 [Gmail Auto CC] Comma inserted + removed instantly (last email).');
   }
+
+  await wait(300);
 
   // ── Step 6: Verify chip formation (non-blocking) ─────────
   const remaining = (ccInput.value || '').trim();
